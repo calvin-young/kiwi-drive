@@ -18,9 +18,10 @@ Adafruit_DCMotor *DCYellow = AFMS.getMotor(2); // Yellow
 Adafruit_DCMotor *DCBlue   = AFMS.getMotor(1); // Blue
   
 // Declare variables
-uint8_t RED    = 3;
-uint8_t BLUE   = 1;
-uint8_t YELLOW = 2;
+uint8_t RED     = 3;
+uint8_t BLUE    = 1;
+uint8_t YELLOW  = 2;
+int input_speed = 0;
 boolean autopilot_truth = 0;
 
 // Analog pins
@@ -34,102 +35,94 @@ int proxy_sensor_control = 7;
 void setup() {
   XBee.begin(9600); // Initialize XBee
   AFMS.begin();     // Initialize motor shield
-  pinMode(proxy_sensor_control,OUTPUT);    // Initialize IR proximity sensor
-  digitalWrite(proxy_sensor_control,HIGH); // Power IR proximity sensor
-  
-  // Notify operability
-  XBee.println(F("Awwwww YEA we WORKIN!"));
+  pinMode(proxy_sensor_control,OUTPUT);     // Initialize IR proximity sensor
+  digitalWrite(proxy_sensor_control,HIGH);  // Power IR proximity sensor
+  XBee.println(F("Awwwww YEA we WORKIN!")); // Notify operability
 }
 
 /******** LOOP ******** LOOP ******** LOOP ******** LOOP ******** LOOP ******** LOOP ******** LOOP ********/
 
 void loop() {
-  proxy();
-  drive();
-}
-
-/******** PROXY ******** PROXY ******** PROXY ******** PROXY ******** PROXY ******** PROXY ******** PROXY ********/
-
-void proxy() {
-  // Avoid hitting head-on obstacles
+  proximity_check();
   
-  // Compute distance as voltage (range approximately 0.5 to 3.1)
-  int n     = 10;
-  float sum = 0.0;
-  for (int i=0; i<n; i++) sum += analogRead(proxy_sensor_reading);
-  float proxy_voltage = sum / float(n) / 1023.0 * 5.0;
-  
-  // Back off if too close
-  if (proxy_voltage >= 1.65) {
-    kill();
-    DCBlue->run(BACKWARD);
-    DCBlue->setSpeed(150);
-    DCYellow->run(FORWARD);
-    DCYellow->setSpeed(150);
-    delay(300);
-    if (autopilot_truth) autopilot();
-    else kill();
-  }
-}
-  
-  
-/******** DRIVE ******** DRIVE ******** DRIVE ******** DRIVE ******** DRIVE ******** DRIVE ******** DRIVE ********/
-
-void drive() {
   // Determine and control speed and direction
   if (XBee.available()) {
     char input = XBee.read(); // Retrieve user input from XBee
     switch (input) {          // Translate user input into command
+      // Speed control
+      case '1':
+        input_speed = 50;
+        break;
+      case '2':
+        input_speed = 75;
+        break;
+      case '3':
+        input_speed = 100;
+        break;
+      case '4':
+        input_speed = 125;
+        break;
+      case '5':
+        input_speed = 150;
+        break;
+      case '[':
+        input_speed -= 10;
+        break;
+      case ']':
+        input_speed += 10;
+        break;
+      // Direction control
       case 'w':
         kill();
         DCBlue->run(FORWARD);
-        DCBlue->setSpeed(100);
+        DCBlue->setSpeed(input_speed);
         DCYellow->run(BACKWARD);
-        DCYellow->setSpeed(100);
+        DCYellow->setSpeed(input_speed);
         break;
       case 's':
         kill();
         DCBlue->run(BACKWARD);
-        DCBlue->setSpeed(100);
+        DCBlue->setSpeed(input_speed);
         DCYellow->run(FORWARD);
-        DCYellow->setSpeed(100);
+        DCYellow->setSpeed(input_speed);
         break;
       case 'a':
         kill();
         DCRed->run(BACKWARD);
-        DCRed->setSpeed(100);
+        DCRed->setSpeed(input_speed);
         DCBlue->run(FORWARD);
-        DCBlue->setSpeed(55);
+        DCBlue->setSpeed(input_speed * 0.55);
         DCYellow->run(FORWARD);
-        DCYellow->setSpeed(55);
+        DCYellow->setSpeed(input_speed * 0.55);
         break;
       case 'd':
         kill();
         DCRed->run(FORWARD);
-        DCRed->setSpeed(100);
+        DCRed->setSpeed(input_speed);
         DCBlue->run(BACKWARD);
-        DCBlue->setSpeed(55);
+        DCBlue->setSpeed(input_speed * 0.55);
         DCYellow->run(BACKWARD);
-        DCYellow->setSpeed(55);
+        DCYellow->setSpeed(input_speed * 0.55);
         break;
       case 'e':
         kill();
         DCRed->run(FORWARD);
-        DCRed->setSpeed(40);
+        DCRed->setSpeed(input_speed * 0.40);
         DCBlue->run(FORWARD);
-        DCBlue->setSpeed(40);
+        DCBlue->setSpeed(input_speed * 0.40);
         DCYellow->run(FORWARD);
-        DCYellow->setSpeed(40);
+        DCYellow->setSpeed(input_speed * 0.40);
         break;
       case 'q':
         kill();
         DCRed->run(BACKWARD);
-        DCRed->setSpeed(40);
+        DCRed->setSpeed(input_speed * 0.40);
         DCBlue->run(BACKWARD);
-        DCBlue->setSpeed(40);
+        DCBlue->setSpeed(input_speed * 0.40);
         DCYellow->run(BACKWARD);
-        DCYellow->setSpeed(40);
+        DCYellow->setSpeed(input_speed * 0.40);
         break;
+      // Autopilot or manual override
       case 'z':
         halt();
         autopilot_truth = false;
@@ -138,36 +131,64 @@ void drive() {
         autopilot_truth = true;
         autopilot();
         break;
+      // Default behavior if any other key is pressed
       default:
         kill();
     }
   }
 }
 
-/******** AUTO ******** AUTO ******** AUTO ******** AUTO ******** AUTO ******** AUTO ******** AUTO ********/
+/******** PROXIMITY CHECK ******** PROXIMITY CHECK ******** PROXIMITY CHECK ******** PROXIMITY CHECK ********/
+
+void proximity_check() {
+  // Avoid hitting head-on obstacles
+  // Compute distance as voltage (range approximately 0.5 to 3.1)
+  int n     = 10;
+  float sum = 0.0;
+  for (int i=0; i<n; i++) sum += analogRead(proxy_sensor_reading);
+  float proxy_voltage = sum / float(n) / 1023.0 * 5.0;
+  
+  // Back up if too close
+  if (proxy_voltage >= 1.65) {
+    kill();
+    DCBlue->run(BACKWARD);
+    DCBlue->setSpeed(111);
+    DCYellow->run(FORWARD);
+    DCYellow->setSpeed(111);
+    delay(300);
+    kill();
+    if (autopilot_truth) autopilot();
+  }
+}
+
+/******** AUTOPILOT ******** AUTOPILOT ******** AUTOPILOT ******** AUTOPILOT ******** AUTOPILOT ********/
 
 void autopilot() {
   // Drive around aimlessly
-  int autopilot_speed = random(50,125);
-  uint8_t autopilot_direction = random(0,2);
-  if (autopilot_direction == 1) autopilot_direction = FORWARD;
-  else autopilot_direction = BACKWARD;
-
-  // Pick direction
   kill();
+
+  // Randomize rotation direction (left or right)
+  uint8_t autopilot_direction = random(0,2);
+  if (autopilot_direction == 1) autopilot_direction = FORWARD;  // right
+  else                          autopilot_direction = BACKWARD; // left
   DCRed->run(autopilot_direction);
-  DCRed->setSpeed(autopilot_speed);
   DCBlue->run(autopilot_direction);
-  DCBlue->setSpeed(autopilot_speed);
   DCYellow->run(autopilot_direction);
-  DCYellow->setSpeed(autopilot_speed);
-  delay(random(75,250));
+  
+  // Randomize speed (within a range of input_speed
+  int autopilot_speed = random(input_speed - 10, input_speed + 10);
+  DCRed->setSpeed(input_speed - 10);
+  DCBlue->setSpeed(input_speed - 10);
+  DCYellow->setSpeed(input_speed - 10);
+  
+  // Randomize rotation duration
+  delay(random(75,350));
+  kill();
   
   // Drive forward
-  kill();
   DCBlue->run(FORWARD);
-  DCBlue->setSpeed(autopilot_speed);
   DCYellow->run(BACKWARD);
+  DCBlue->setSpeed(autopilot_speed);
   DCYellow->setSpeed(autopilot_speed);
 }
   
